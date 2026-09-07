@@ -1,0 +1,28 @@
+{
+  "name": "ENGRAM — Memory Grid Trainer",
+  "short_name": "ENGRAM",
+  "description": "A fast, juicy memory-grid trainer. Watch the pattern, recall the cells, carve them into memory.",
+  "start_url": "./",
+  "scope": "./",
+  "id": "engram-memory-trainer",
+  "display": "standalone",
+  "display_override": ["standalone", "fullscreen"],
+  "orientation": "portrait",
+  "background_color": "#05060f",
+  "theme_color": "#05060f",
+  "categories": ["games", "education", "productivity"],
+  "icons": [
+    {
+      "src": "./icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
