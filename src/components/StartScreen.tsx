@@ -1,9 +1,11 @@
 import { useMemo, type CSSProperties } from 'react';
-import { Brain, Cloud, Crosshair, Download, Eye, Feather, Flame, LayoutGrid, MousePointerClick, Play, RotateCcw, Sparkles, TrendingUp, Zap } from 'lucide-react';
+import { Brain, Cloud, Crosshair, Download, Eye, Feather, Flame, Globe2, LayoutGrid, MousePointerClick, Play, RotateCcw, Sparkles, Swords, TrendingUp, Zap } from 'lucide-react';
 import type { ScoreEntry } from '../hooks/useHighScores';
 import type { MetaProfile } from '../hooks/useMeta';
 import { DIFFS, DIFF_ORDER, type Difficulty } from '../lib/levels';
 import { HighScoreTable } from './HighScoreTable';
+import { LeaderboardPanel } from './LeaderboardPanel';
+import type { CloudUser } from '../hooks/useFirebaseSync';
 
 interface DemoCell {
   hot: boolean;
@@ -22,6 +24,15 @@ export function StartScreen({
   canInstall,
   onInstall,
   onOpenSync,
+  cloudConnected,
+  cloudBusy,
+  cloudStatus,
+  cloudUser,
+  leaderboardMode,
+  showGlobal,
+  onToggleGlobal,
+  challenge,
+  onDeclineChallenge,
 }: {
   onStart: (diff: Difficulty) => void;
   diff: Difficulty;
@@ -31,6 +42,15 @@ export function StartScreen({
   canInstall: boolean;
   onInstall: () => void;
   onOpenSync: () => void;
+  cloudConnected: boolean;
+  cloudBusy: boolean;
+  cloudStatus: 'unconfigured' | 'signedOut' | 'connecting' | 'syncing' | 'synced' | 'offline' | 'error';
+  cloudUser: CloudUser | null;
+  leaderboardMode: Difficulty;
+  showGlobal: boolean;
+  onToggleGlobal: () => void;
+  challenge: { name: string; target: number; mode: Difficulty } | null;
+  onDeclineChallenge: () => void;
 }) {
   const demo = useMemo<DemoCell[]>(
     () =>
@@ -68,17 +88,38 @@ export function StartScreen({
         <div className="grid h-14 w-14 place-items-center rounded-2xl border border-vio/40 bg-gradient-to-br from-vio/25 to-cyanx/15 shadow-[0_0_30px_rgba(139,92,246,0.35)]">
           <Brain className="h-7 w-7 text-vio" />
         </div>
-        <h1 className="title-shimmer mt-4 font-display text-[15vw] font-extrabold leading-none tracking-[0.16em] sm:text-7xl">
+        <h1 className="title-shimmer mt-4 w-full whitespace-nowrap text-center font-display text-[clamp(2.6rem,12vw,4.5rem)] font-extrabold leading-none tracking-[0.12em] indent-[0.12em] sm:text-7xl">
           ENGRAM
         </h1>
-        <p className="mt-3 text-[11px] font-semibold tracking-[0.34em] text-dim sm:text-xs">
+        <p className="mt-3 px-2 text-center text-[10px] font-semibold tracking-[0.22em] text-dim sm:text-xs sm:tracking-[0.34em]">
           CARVE PATTERNS INTO MEMORY
         </p>
       </div>
 
+      {challenge && (
+        <div className="fade-up w-full max-w-md rounded-2xl border border-mag/45 bg-mag/[0.09] p-4 text-center">
+          <div className="flex items-center justify-center gap-2">
+            <Swords className="h-4 w-4 text-mag" />
+            <span className="font-display text-[11px] font-extrabold tracking-[0.2em] text-mag">INCOMING DUEL</span>
+          </div>
+          <p className="mt-2 text-sm text-ink">
+            <span className="font-bold text-mag">{challenge.name}</span> scored{' '}
+            <span className="font-display font-bold tabular-nums">{challenge.target.toLocaleString()}</span>
+          </p>
+          <p className="mt-1 text-[10px] tracking-wide text-dim">
+            You'll face the identical grids on {DIFFS[challenge.mode].label}. Pure recall, no luck.
+          </p>
+          <button onClick={onDeclineChallenge} className="mt-2 text-[10px] font-semibold tracking-widest text-dim underline underline-offset-2 hover:text-ink">
+            play a normal run instead
+          </button>
+        </div>
+      )}
+
       {/* difficulty selector */}
-      <div className="fade-up w-full max-w-md" style={{ animationDelay: '70ms' }}>
-        <div className="mb-2 text-center text-[9px] font-bold tracking-[0.3em] text-dim">CHOOSE YOUR CURRENT</div>
+      <div className={`fade-up w-full max-w-md ${challenge ? 'pointer-events-none opacity-40' : ''}`} style={{ animationDelay: '70ms' }}>
+        <div className="mb-2 text-center text-[9px] font-bold tracking-[0.3em] text-dim">
+          {challenge ? 'LOCKED BY DUEL' : 'CHOOSE YOUR CURRENT'}
+        </div>
         <div className="grid grid-cols-3 gap-2">
           {DIFF_ORDER.map((d) => {
             const cfg = DIFFS[d];
@@ -118,8 +159,8 @@ export function StartScreen({
         style={{ animationDelay: '120ms' }}
       >
         <span className="relative z-10 flex items-center gap-2.5">
-          <Play className="h-5 w-5" fill="currentColor" />
-          START TRAINING
+          {challenge ? <Swords className="h-5 w-5" /> : <Play className="h-5 w-5" fill="currentColor" />}
+          {challenge ? 'ACCEPT DUEL' : 'START TRAINING'}
         </span>
         <span className="absolute inset-0 -translate-x-full bg-white/30 transition-transform duration-500 ease-out group-hover:translate-x-0" />
       </button>
@@ -190,11 +231,41 @@ export function StartScreen({
         )
       )}
 
-      {modeScores.length > 0 && (
-        <div className="fade-up w-full max-w-md" style={{ animationDelay: '250ms' }}>
-          <HighScoreTable scores={modeScores} limit={5} title={`LEGENDS · ${DIFFS[diff].label}`} />
+      {cloudUser && (
+        <div className="fade-up flex items-center gap-2 rounded-full border border-cyanx/40 bg-cyanx/10 px-3.5 py-1.5" style={{ animationDelay: '195ms' }}>
+          {cloudUser.photoURL ? (
+            <img src={cloudUser.photoURL} alt="" className="h-5 w-5 rounded-full" referrerPolicy="no-referrer" />
+          ) : (
+            <span className="grid h-5 w-5 place-items-center rounded-full bg-cyanx/25 text-[10px] font-bold text-cyanx">
+              {cloudUser.displayName.charAt(0).toUpperCase()}
+            </span>
+          )}
+          <span className="text-[10px] font-bold tracking-[0.14em] text-cyanx">
+            SIGNED IN AS {cloudUser.displayName.toUpperCase().slice(0, 18)}
+          </span>
         </div>
       )}
+
+      {modeScores.length > 0 && (
+        <div className="fade-up w-full max-w-md" style={{ animationDelay: '250ms' }}>
+          <HighScoreTable scores={modeScores} limit={5} title={`LOCAL · ${DIFFS[diff].label}`} />
+        </div>
+      )}
+
+      <div className="fade-up w-full max-w-md" style={{ animationDelay: '255ms' }}>
+        <button
+          onClick={onToggleGlobal}
+          className="flex w-full items-center justify-center gap-2 rounded-2xl border border-cyanx/35 bg-cyanx/[0.07] px-4 py-2.5 text-[11px] font-bold tracking-[0.18em] text-cyanx transition-colors hover:bg-cyanx/10 active:scale-[0.99]"
+        >
+          <Globe2 className="h-3.5 w-3.5" />
+          {showGlobal ? 'HIDE GLOBAL LEADERBOARD' : 'VIEW GLOBAL LEADERBOARD'}
+        </button>
+        {showGlobal && (
+          <div className="mt-2 fade-up">
+            <LeaderboardPanel initialMode={leaderboardMode} myUid={cloudUser?.uid ?? null} />
+          </div>
+        )}
+      </div>
 
       <div className="fade-up flex flex-wrap items-center justify-center gap-2" style={{ animationDelay: '270ms' }}>
         {canInstall && (
@@ -207,9 +278,35 @@ export function StartScreen({
         )}
         <button
           onClick={onOpenSync}
-          className="flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-4 py-2 text-[11px] font-bold tracking-[0.16em] text-dim transition-colors hover:text-ink active:scale-95"
+          className={`flex items-center gap-2 rounded-full border px-4 py-2 text-[11px] font-bold tracking-[0.16em] transition-colors active:scale-95 ${
+            cloudConnected ? 'border-mint/35 bg-mint/10 text-mint' : 'border-white/15 bg-white/5 text-dim hover:text-ink'
+          }`}
         >
-          <Cloud className="h-3.5 w-3.5" /> SYNC / BACKUP
+          <span className="relative">
+            <Cloud className="h-3.5 w-3.5" />
+            {cloudConnected && (
+              <span
+                className={`absolute -right-1 -top-1 h-1.5 w-1.5 rounded-full ${
+                  cloudBusy
+                    ? 'dot-pulse bg-gold'
+                    : cloudStatus === 'error'
+                      ? 'bg-rose'
+                      : cloudStatus === 'offline'
+                        ? 'bg-gold'
+                        : 'bg-mint'
+                }`}
+              />
+            )}
+          </span>
+          {cloudConnected
+            ? cloudBusy
+              ? 'CLOUD SYNCING'
+              : cloudStatus === 'error'
+                ? 'CLOUD NEEDS ATTENTION'
+                : cloudStatus === 'offline'
+                  ? 'CLOUD OFFLINE'
+                  : 'CLOUD SYNCED'
+            : 'SYNC / BACKUP'}
         </button>
       </div>
 

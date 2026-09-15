@@ -11,6 +11,7 @@ import {
   tilePoints,
   totalRevealWindow,
 } from '../lib/levels';
+import { makeSeed, rngFor } from '../lib/rng';
 
 export type Phase = 'menu' | 'memorize' | 'recall' | 'roundclear' | 'revealmiss' | 'gameover';
 
@@ -37,6 +38,7 @@ export interface GState {
   phase: Phase;
   paused: boolean;
   diff: Difficulty;
+  seed: string;
   level: number;
   score: number;
   lives: number;
@@ -61,12 +63,16 @@ export interface GState {
   feverActive: boolean;
   roundHadMiss: boolean;
   perfectRounds: number;
+  /** adaptive-mode staircase offset applied to pattern size */
+  stair: number;
+  adaptive: boolean;
 }
 
 const initialG = (): GState => ({
   phase: 'menu',
   paused: false,
   diff: 'focus',
+  seed: '',
   level: 1,
   score: 0,
   lives: 3,
@@ -91,6 +97,8 @@ const initialG = (): GState => ({
   feverActive: false,
   roundHadMiss: false,
   perfectRounds: 0,
+  stair: 0,
+  adaptive: false,
 });
 
 export function useMemoryGame(onEvent: (e: GameEvent) => void) {
@@ -142,10 +150,13 @@ export function useMemoryGame(onEvent: (e: GameEvent) => void) {
       const eff = level + cfg.bias;
       const size = gridSizeForLevel(eff);
       const cells = size * size;
-      const count = patternSizeForLevel(eff, cells);
+      const cap = Math.min(Math.floor(cells * 0.4), 18);
+      const base = patternSizeForLevel(eff, cells);
+      // staircase: pattern size follows recall rather than level alone
+      const count = s.adaptive ? Math.max(3, Math.min(cap, base + s.stair)) : base;
       s.level = level;
       s.gridSize = size;
-      s.pattern = samplePattern(cells, count);
+      s.pattern = samplePattern(cells, count, rngFor(s.seed, level));
       s.found = [];
       s.missed = [];
       s.cursor = Math.floor(cells / 2);
@@ -165,13 +176,15 @@ export function useMemoryGame(onEvent: (e: GameEvent) => void) {
   );
 
   const startGame = useCallback(
-    (diff?: Difficulty) => {
+    (diff?: Difficulty, seed?: string, opts?: { adaptive?: boolean }) => {
       const s = g.current;
       const keepKeyboard = s.usingKeyboard;
       const d = diff ?? s.diff;
       Object.assign(s, initialG());
       s.usingKeyboard = keepKeyboard;
       s.diff = d;
+      s.adaptive = !!opts?.adaptive;
+      s.seed = seed ?? makeSeed();
       s.lives = DIFFS[d].lives;
       startLevel(1);
     },
@@ -221,6 +234,13 @@ export function useMemoryGame(onEvent: (e: GameEvent) => void) {
     s.roundPerfect = perfect;
     s.roundPerfectBonus = perfectBonus;
     if (perfect) s.perfectRounds++;
+    if (s.adaptive) {
+      // 1-up / 2-down staircase — the standard psychophysical adaptive rule
+      const size = s.gridSize * s.gridSize;
+      const cap = Math.min(Math.floor(size * 0.4), 18);
+      const base = patternSizeForLevel(s.level + DIFFS[s.diff].bias, size);
+      s.stair = Math.max(-2, Math.min(cap - base, s.stair + (perfect ? 1 : -2)));
+    }
     let heart = false;
     if (s.level % 5 === 0 && s.lives < cfg.lives) {
       s.lives++;

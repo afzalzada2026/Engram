@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Check, Flame, Gauge, Home, LayoutGrid, Play, Sparkles, Star, Target, TrendingUp, Zap } from 'lucide-react';
+import { Check, Flame, Gauge, Home, LayoutGrid, Play, Sparkles, Star, Swords, Target, TrendingUp, Zap } from 'lucide-react';
 import { NAME_KEY, type ScoreEntry } from '../hooks/useHighScores';
 import type { MetaProfile, RunSummary } from '../hooks/useMeta';
 import { DIFFS, rankForScore, type Difficulty } from '../lib/levels';
@@ -13,6 +13,8 @@ interface Props {
   maxCombo: number;
   perfectRounds: number;
   mode: Difficulty;
+  duel: { name: string; target: number } | null;
+  onShare: () => void;
   isNewBest: boolean;
   qualifies: boolean;
   onSaveName: (name: string) => string;
@@ -31,6 +33,8 @@ export function GameOverScreen({
   maxCombo,
   perfectRounds,
   mode,
+  duel,
+  onShare,
   isNewBest,
   qualifies,
   onSaveName,
@@ -87,6 +91,23 @@ export function GameOverScreen({
           <div className="pop-in mt-3 inline-flex items-center gap-1.5 rounded-full border border-gold/40 bg-gold/15 px-3.5 py-1">
             <Sparkles className="h-3.5 w-3.5 text-gold" />
             <span className="text-[11px] font-bold tracking-[0.18em] text-gold">NEW PERSONAL BEST</span>
+          </div>
+        )}
+
+        {duel && (
+          <div
+            className={`pop-in mt-4 rounded-2xl border p-3.5 ${
+              score > duel.target ? 'border-mint/45 bg-mint/10' : 'border-rose/40 bg-rose/10'
+            }`}
+          >
+            <div className={`font-display text-sm font-extrabold tracking-[0.18em] ${score > duel.target ? 'text-mint' : 'text-rose'}`}>
+              {score > duel.target ? `YOU BEAT ${duel.name}` : `${duel.name} STILL LEADS`}
+            </div>
+            <div className="mt-1 text-[11px] tracking-wide text-dim">
+              {score > duel.target
+                ? `Their ${duel.target.toLocaleString()} → your ${score.toLocaleString()}. Send it back.`
+                : `You need ${(duel.target - score + 1).toLocaleString()} more to take the crown.`}
+            </div>
           </div>
         )}
 
@@ -179,10 +200,17 @@ export function GameOverScreen({
           </div>
         )}
 
-        <div className="mt-5 flex gap-2.5">
+        <button
+          onClick={onShare}
+          className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-mag via-vio to-cyanx px-4 py-3.5 font-display text-sm font-bold tracking-widest text-abyss transition-transform duration-150 hover:scale-[1.02] active:scale-95"
+        >
+          <Swords className="h-4 w-4" /> {duel ? 'SEND A REMATCH' : 'CHALLENGE A FRIEND'}
+        </button>
+
+        <div className="mt-2.5 flex gap-2.5">
           <button
             onClick={onRestart}
-            className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-cyanx to-vio px-4 py-3.5 font-display text-sm font-bold tracking-widest text-abyss transition-transform duration-150 hover:scale-[1.02] active:scale-95"
+            className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/5 px-4 py-3.5 font-display text-sm font-bold tracking-widest text-ink transition-all duration-150 hover:bg-white/10 active:scale-95"
           >
             <Play className="h-4 w-4" fill="currentColor" /> PLAY AGAIN
           </button>

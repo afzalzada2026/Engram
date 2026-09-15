@@ -62,6 +62,13 @@ export const DIFF_ORDER: Difficulty[] = ['calm', 'focus', 'surge'];
 export const TILE_FLASH_STEP_MS = 55;
 export const EXTRA_REVEAL_TAIL_MS = 200;
 
+/**
+ * Calm mode staggers onsets far apart so the display never presents a rapid
+ * sequence of luminance transients (photosensitive-epilepsy safety), and each
+ * cell cross-fades rather than popping.
+ */
+export const CALM_FLASH_STEP_MS = 340;
+
 export function gridSizeForLevel(level: number): number {
   const l = Math.max(1, level);
   if (l <= 2) return 3;
@@ -104,16 +111,16 @@ export function timeBonusMax(level: number): number {
   return 120 + 30 * level;
 }
 
-export function samplePattern(cells: number, count: number): number[] {
+export function samplePattern(cells: number, count: number, rand: () => number = Math.random): number[] {
   const idx = Array.from({ length: cells }, (_, i) => i);
   for (let i = idx.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
+    const j = Math.floor(rand() * (i + 1));
     [idx[i], idx[j]] = [idx[j], idx[i]];
   }
   // shuffle order of the chosen set too, so flash order looks organic
   const chosen = idx.slice(0, count);
   for (let i = chosen.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
+    const j = Math.floor(rand() * (i + 1));
     [chosen[i], chosen[j]] = [chosen[j], chosen[i]];
   }
   return chosen;

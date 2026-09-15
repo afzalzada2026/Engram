@@ -15,11 +15,13 @@ interface GridProps {
   cursor: number;
   usingKeyboard: boolean;
   flashScale: number;
+  /** ms between successive tile onsets (calm mode uses a much larger value) */
+  stepMs: number;
   registerTile: (i: number, el: HTMLElement | null) => void;
   onPick: (i: number) => void;
 }
 
-export function Grid({ size, pattern, found, missed, phase, paused, cursor, usingKeyboard, flashScale, registerTile, onPick }: GridProps) {
+export function Grid({ size, pattern, found, missed, phase, paused, cursor, usingKeyboard, flashScale, stepMs, registerTile, onPick }: GridProps) {
   const foundSet = useMemo(() => new Set(found), [found]);
   const missedSet = useMemo(() => new Set(missed), [missed]);
   const patternSet = useMemo(() => new Set(pattern), [pattern]);
@@ -55,7 +57,7 @@ export function Grid({ size, pattern, found, missed, phase, paused, cursor, usin
               className={`tile ${interactive ? 'on' : ''} ${kb ? 'kb' : ''}`}
               style={
                 {
-                  '--d': `${pattern.indexOf(i) * 55}ms`,
+                  '--d': `${pattern.indexOf(i) * stepMs}ms`,
                   '--fd': `${flashDur}ms`,
                 } as CSSProperties
               }

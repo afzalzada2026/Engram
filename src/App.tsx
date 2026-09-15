@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Brain, Pause, Volume2, VolumeX } from 'lucide-react';
+import { Brain, HeartHandshake, Pause, Settings as SettingsIcon, Volume2, VolumeX } from 'lucide-react';
 import { Grid } from './components/Grid';
 import { Hud, PhaseBanner, TimerBar } from './components/Hud';
 import { StartScreen } from './components/StartScreen';
@@ -9,11 +9,29 @@ import ParticleFX, { type ParticleFXHandle } from './components/ParticleFX';
 import { useHighScores, NAME_KEY } from './hooks/useHighScores';
 import { useSound } from './hooks/useSound';
 import { useMemoryGame, type GameEvent } from './hooks/useMemoryGame';
+import { SettingsModal } from './components/SettingsModal';
+import {
+  evaluateSession,
+  loadSettings,
+  newSession,
+  saveSettings,
+  sleepNudge,
+  spanFrom,
+  spanTrend,
+  type Settings as WSettings,
+  type SpanSample,
+  type Nudge,
+  type SessionState,
+} from './lib/wellbeing';
+import { CALM_FLASH_STEP_MS, DIFFS, gridSizeForLevel, TILE_FLASH_STEP_MS, type Difficulty } from './lib/levels';
 import { useMeta, type RunSummary } from './hooks/useMeta';
 import { usePWA } from './hooks/usePWA';
+import { useFirebaseSync } from './hooks/useFirebaseSync';
+import { useAnalytics } from './hooks/useAnalytics';
 import { SyncModal } from './components/SyncModal';
+import { ShareCard } from './components/ShareCard';
+import { buildChallengeUrl, clearChallengeFromUrl, readChallengeFromUrl, type Challenge } from './lib/duel';
 import { haptic } from './lib/haptics';
-import { DIFFS, gridSizeForLevel, type Difficulty } from './lib/levels';
 import { stageForLevel, stageIndexForLevel } from './lib/themes';
 import { NAME_KEY as SAVE_NAME_KEY } from './hooks/useHighScores';
 import type { SaveBundle } from './lib/saveData';
@@ -63,10 +81,39 @@ export default function App() {
   const [qualifiesAtEnd, setQualifiesAtEnd] = useState(false);
   const [runSummary, setRunSummary] = useState<RunSummary | null>(null);
   const [menuDiff, setMenuDiff] = useState<Difficulty>(loadDifficulty);
-  const [syncOpen, setSyncOpen] = useState(false);
+  const [settings, setSettings] = useState<WSettings>(loadSettings);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [nudge, setNudge] = useState<Nudge | null>(null);
+  const [spanSamples, setSpanSamples] = useState<SpanSample[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem('engram-span') || '[]') as SpanSample[];
+    } catch {
+      return [];
+    }
+  });
+  const session = useRef<SessionState>(newSession());
+  const settingsRef = useRef(settings);
+  settingsRef.current = settings;
+  const [syncOpen, setSyncOpen] = useState(
+    () => typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('manage') === 'account'
+  );
+  const [shareOpen, setShareOpen] = useState(false);
+  const [showGlobal, setShowGlobal] = useState(false);
+  const [leaderboardMode] = useState<Difficulty>('focus');
+  const [challenge, setChallenge] = useState<Challenge | null>(() => readChallengeFromUrl());
+  const [activeDuel, setActiveDuel] = useState<Challenge | null>(null);
+  const finalRound = useRef<{ pattern: number[]; size: number; stageId: string }>({ pattern: [], size: 3, stageId: 'drift' });
   const [stageUp, setStageUp] = useState<{ id: string; name: string; tag: string; accent: string } | null>(null);
   const stageIdxRef = useRef(0);
   const pwa = usePWA();
+
+  const patchSettings = useCallback((patch: Partial<WSettings>) => {
+    setSettings((prev) => {
+      const next = { ...prev, ...patch };
+      saveSettings(next);
+      return next;
+    });
+  }, []);
 
   const changeDiff = useCallback(
     (d: Difficulty) => {
@@ -80,6 +127,8 @@ export default function App() {
     },
     [sound]
   );
+
+  const analytics = useAnalytics();
 
   const addPop = useCallback((x: number, y: number, text: string, kind: PopKind) => {
     const id = ++popSeq.current;
@@ -159,6 +208,22 @@ export default function App() {
         }
         case 'roundClear': {
           sound.clear();
+          setSpanSamples((prev) => {
+            const next = [...prev, { size: e.level > 0 ? gameRef.current?.g.pattern.length ?? 0 : 0, clean: e.perfect, at: Date.now() }].slice(-40);
+            try {
+              localStorage.setItem('engram-span', JSON.stringify(next));
+            } catch { /* ignore */ }
+            return next;
+          });
+          session.current.runs++;
+          session.current.bestSpanThisSession = Math.max(
+            session.current.bestSpanThisSession,
+            gameRef.current?.g.pattern.length ?? 0
+          );
+          if (settingsRef.current.coach && !nudge) {
+            const n = evaluateSession(session.current, settingsRef.current.sessionMinutes);
+            if (n) setNudge(n);
+          }
           haptic(e.perfect ? [10, 40, 70, 40, 90] : [10, 40, 70]);
           if (e.perfect) sound.perfect();
           const c = gridCenter();
@@ -180,6 +245,7 @@ export default function App() {
           break;
         }
         case 'feverStart': {
+          analytics.feverStart(gameRef.current?.g.level ?? 1);
           sound.feverStart();
           haptic([15, 40, 15, 40, 90]);
           const c = gridCenter();
@@ -201,7 +267,24 @@ export default function App() {
         case 'gameOver': {
           sound.over();
           haptic([40, 60, 40, 60, 140]);
+          const gs = gameRef.current?.g;
+          if (gs) {
+            finalRound.current = { pattern: gs.pattern, size: gs.gridSize, stageId: stageForLevel(gs.level).id };
+          }
+          session.current.runs++;
+          session.current.consecutiveLosses++;
+          if (settingsRef.current.coach) {
+            const n = evaluateSession(session.current, settingsRef.current.sessionMinutes);
+            if (n) setNudge(n);
+          }
           const mode = gameRef.current?.g.diff ?? 'focus';
+          const wasBest = (gameRef.current?.g.score ?? 0) > hs.bestFor(mode);
+          analytics.runEnd(mode, e.score, e.level, e.perfectRounds > 0);
+          if (activeDuel) analytics.duelResult(e.score > activeDuel.target);
+          if (wasBest) analytics.newBest(mode);
+          if (cloud.user) {
+            void cloud.submitLeaderboard?.(mode, e.score, e.level);
+          }
           setIsNewBest(e.score > hs.bestFor(mode));
           setQualifiesAtEnd(hs.qualifies(e.score, mode));
           setRunSummary(
@@ -217,6 +300,7 @@ export default function App() {
           if (idx !== stageIdxRef.current) {
             stageIdxRef.current = idx;
             const st = stageForLevel(e.level);
+            analytics.stageReached(st.id);
             setStageUp({ id: st.id, name: st.name, tag: st.tag, accent: st.accent });
             sound.bonus();
             haptic([12, 30, 12, 30, 60]);
@@ -244,10 +328,26 @@ export default function App() {
     setQualifiesAtEnd(false);
     setRunSummary(null);
     setStageUp(null);
+    setShareOpen(false);
+    setNudge(null);
     stageIdxRef.current = 0;
+    session.current = newSession();
+    const hr = new Date().getHours();
+    if (settingsRef.current.coach && hr >= 20 && hr < 23) setNudge(sleepNudge());
     sound.start();
-    game.startGame(menuDiff);
-  }, [sound, game, menuDiff]);
+    const duel = challenge;
+    setActiveDuel(duel);
+    analytics.runStart(duel ? duel.mode : menuDiff, !!duel);
+    if (duel) analytics.duelAccept(duel.mode);
+    game.startGame(duel ? duel.mode : menuDiff, duel ? duel.seed : undefined, { adaptive: settingsRef.current.adaptive });
+  }, [sound, game, menuDiff, challenge, analytics]);
+
+  const declineChallenge = useCallback(() => {
+    setChallenge(null);
+    setActiveDuel(null);
+    clearChallengeFromUrl();
+    sound.click();
+  }, [sound]);
   const launchRef = useRef(launch);
   launchRef.current = launch;
 
@@ -364,6 +464,8 @@ export default function App() {
   const beaten = modeBest > 0 && g.score > modeBest;
   const gridUpgrade = gridSizeForLevel(g.level + 1 + DIFFS[g.diff].bias) > g.gridSize;
   const stage = stageForLevel(g.level);
+  const span = spanFrom(spanSamples);
+  const trend = spanTrend(spanSamples);
 
   const saveBundle = useCallback((): SaveBundle => {
     let name = 'PLAYER';
@@ -375,6 +477,31 @@ export default function App() {
     return { v: 1, ts: Date.now(), name, meta: metaRef.current.store, scores: hsRef.current.scores };
   }, []);
 
+  const shareInput = useCallback(() => {
+    let me = 'A FRIEND';
+    try {
+      me = localStorage.getItem(SAVE_NAME_KEY) || 'A FRIEND';
+    } catch {
+      /* ignore */
+    }
+    const seed = g.seed || 'ENGRAM';
+    const url = buildChallengeUrl({ seed, target: g.score, name: me, mode: g.diff, level: g.level });
+    const accuracy = g.pickTotal > 0 ? Math.round((g.correctTotal / g.pickTotal) * 100) : 100;
+    return {
+      score: g.score,
+      level: g.level,
+      accuracy,
+      maxCombo: g.maxCombo,
+      modeLabel: DIFFS[g.diff].label,
+      pattern: finalRound.current.pattern,
+      gridSize: finalRound.current.size,
+      stageId: finalRound.current.stageId,
+      url,
+      duelWon: activeDuel ? g.score > activeDuel.target : undefined,
+      duelName: activeDuel?.name,
+    };
+  }, [g.seed, g.score, g.diff, g.level, g.pickTotal, g.correctTotal, g.maxCombo, activeDuel]);
+
   const applyMerged = useCallback((merged: SaveBundle) => {
     metaRef.current.replaceStore(merged.meta);
     hsRef.current.replaceAll(merged.scores);
@@ -384,6 +511,56 @@ export default function App() {
       /* ignore */
     }
   }, []);
+
+  const cloud = useFirebaseSync({ getLocalBundle: saveBundle, onApply: applyMerged });
+
+  const resetAll = useCallback(async () => {
+    // Disconnect first so the cloud copy cannot immediately restore the local
+    // data the player explicitly asked to erase.
+    await cloud.disconnect();
+    metaRef.current.replaceStore({ xp: 0, runs: 0, tiles: 0, perfects: 0, bestLevel: 0, streak: 0, lastDay: '' });
+    hsRef.current.replaceAll([]);
+    try {
+      [
+        'engram-settings-v1',
+        'engram-span',
+        'engram-highscores-v1',
+        'synapse-highscores-v1',
+        'engram-meta-v1',
+        'synapse-meta-v1',
+        'engram-difficulty',
+        'engram-errors',
+        'synapse-name',
+        'synapse-muted',
+      ].forEach((k) => localStorage.removeItem(k));
+    } catch {
+      /* ignore */
+    }
+    setSpanSamples([]);
+    setSettings(loadSettings());
+    game.toMenu();
+    setSettingsOpen(false);
+  }, [cloud, game]);
+
+  // Local state remains authoritative while offline. A content fingerprint in
+  // the adapter prevents a remote merge from causing an upload loop.
+  useEffect(() => {
+    if (!cloud.user) return;
+    analytics.identify(cloud.user.uid);
+    analytics.setProfile({ profileLevel: meta.profile.level, favMode: menuDiff });
+    const id = window.setTimeout(() => void cloud.syncNow(), 1000);
+    return () => window.clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [meta.store, hs.scores, cloud.user, cloud.syncNow]);
+
+  // accumulate active training time for the session coach
+  useEffect(() => {
+    if (!playingPhase || g.paused) return;
+    const iv = window.setInterval(() => {
+      session.current.activeMs += 1000;
+    }, 1000);
+    return () => window.clearInterval(iv);
+  }, [playingPhase, g.paused]);
 
   // keep the screen awake during a run (mobile)
   useEffect(() => {
@@ -418,7 +595,7 @@ export default function App() {
 
   return (
     <div
-      className="relative min-h-[100svh] overflow-hidden bg-abyss font-body text-ink"
+      className={`relative min-h-[100svh] overflow-hidden bg-abyss font-body text-ink ${settings.calm ? 'calm' : ''}`}
       style={
         {
           '--stage-a': stage.from,
@@ -439,7 +616,7 @@ export default function App() {
       <div aria-hidden className="vignette pointer-events-none fixed inset-0" />
       {g.feverActive && <div aria-hidden className="gold-veil pointer-events-none fixed inset-0 z-[35]" />}
 
-      <ParticleFX ref={fxRef} />
+      {!settings.calm && <ParticleFX ref={fxRef} />}
 
       {/* fixed corner controls — safe-area aware, thumb-sized */}
       <div
@@ -454,6 +631,19 @@ export default function App() {
             className="glass grid h-11 w-11 place-items-center rounded-2xl text-dim transition-all hover:text-ink active:scale-90"
           >
             <Pause className="h-4.5 w-4.5" fill="currentColor" />
+          </button>
+        )}
+        {g.phase === 'menu' && (
+          <button
+            onClick={() => {
+              sound.click();
+              setSettingsOpen(true);
+            }}
+            tabIndex={-1}
+            aria-label="Settings"
+            className="glass grid h-11 w-11 place-items-center rounded-2xl text-dim transition-all hover:text-ink active:scale-90"
+          >
+            <SettingsIcon className="h-4.5 w-4.5" />
           </button>
         )}
         <button
@@ -487,11 +677,23 @@ export default function App() {
           scores={hs.scores}
           profile={meta.profile}
           canInstall={pwa.canInstall}
-          onInstall={() => void pwa.install()}
+          onInstall={() => {
+            analytics.installPrompted();
+            void pwa.install();
+          }}
           onOpenSync={() => {
             sound.click();
             setSyncOpen(true);
           }}
+          cloudConnected={!!cloud.user}
+          cloudBusy={cloud.status === 'syncing' || cloud.status === 'connecting'}
+          cloudStatus={cloud.status}
+          cloudUser={cloud.user}
+          leaderboardMode={leaderboardMode}
+          showGlobal={showGlobal}
+          onToggleGlobal={() => setShowGlobal((v) => !v)}
+          challenge={challenge}
+          onDeclineChallenge={declineChallenge}
         />
       ) : (
         <main
@@ -546,6 +748,7 @@ export default function App() {
                 cursor={g.cursor}
                 usingKeyboard={g.usingKeyboard}
                 flashScale={DIFFS[g.diff].revealScale}
+                stepMs={settings.calm ? CALM_FLASH_STEP_MS : TILE_FLASH_STEP_MS}
                 registerTile={registerTile}
                 onPick={(i) => game.pickTile(i)}
               />
@@ -591,7 +794,56 @@ export default function App() {
         </div>
       )}
 
-      {syncOpen && <SyncModal bundle={saveBundle()} onApply={applyMerged} onClose={() => setSyncOpen(false)} />}
+      {syncOpen && (
+        <SyncModal bundle={saveBundle()} cloud={cloud} onApply={applyMerged} onClose={() => setSyncOpen(false)} />
+      )}
+
+      {shareOpen && <ShareCard {...shareInput()} onClose={() => setShareOpen(false)} />}
+
+      {settingsOpen && (
+        <SettingsModal
+          settings={settings}
+          onChange={patchSettings}
+          span={span}
+          spanTrend={trend}
+          onClose={() => setSettingsOpen(false)}
+          onReset={resetAll}
+        />
+      )}
+
+      {nudge && settings.coach && g.phase !== 'menu' && (
+        <div
+          className="fixed inset-x-0 bottom-0 z-[75] flex justify-center px-3"
+          style={{ paddingBottom: 'max(14px, env(safe-area-inset-bottom))' }}
+        >
+          <div
+            className="fade-up glass flex w-[min(94vw,470px)] items-start gap-3 rounded-2xl p-3.5"
+            style={{ borderColor: nudge.tone === 'recover' ? 'rgba(251,77,109,0.45)' : 'rgba(54,245,197,0.4)' }}
+            role="status"
+          >
+            <HeartHandshake
+              className="mt-0.5 h-4.5 w-4.5 shrink-0"
+              style={{ color: nudge.tone === 'recover' ? '#fb4d6d' : '#36f5c5' }}
+            />
+            <div className="min-w-0 flex-1">
+              <div
+                className="text-[10px] font-bold tracking-[0.2em]"
+                style={{ color: nudge.tone === 'recover' ? '#fb4d6d' : '#36f5c5' }}
+              >
+                {nudge.title}
+              </div>
+              <p className="mt-1 text-[11px] leading-relaxed text-dim">{nudge.body}</p>
+            </div>
+            <button
+              onClick={() => setNudge(null)}
+              aria-label="Dismiss"
+              className="shrink-0 rounded-lg px-2 py-1 text-[10px] font-bold tracking-widest text-dim transition-colors hover:text-ink"
+            >
+              OK
+            </button>
+          </div>
+        </div>
+      )}
 
       {g.paused && playingPhase && (
         <PauseOverlay
@@ -616,6 +868,13 @@ export default function App() {
           maxCombo={g.maxCombo}
           perfectRounds={g.perfectRounds}
           mode={g.diff}
+          duel={activeDuel ? { name: activeDuel.name, target: activeDuel.target } : null}
+          onShare={() => {
+            sound.click();
+            analytics.duelCreate();
+            analytics.shareOpen();
+            setShareOpen(true);
+          }}
           isNewBest={isNewBest}
           qualifies={qualifiesAtEnd}
           onSaveName={saveName}

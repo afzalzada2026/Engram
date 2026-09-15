@@ -142,8 +142,24 @@ export function PhaseBanner({
   gridUpgrade: boolean;
 }) {
   const key = `${phase}-${level}`;
+  const spoken =
+    phase === 'memorize'
+      ? `Memorize the pattern. ${patternCount} cells.`
+      : phase === 'recall'
+        ? 'Now recall. Tap the cells that lit up.'
+        : phase === 'roundclear'
+          ? 'Grid cleared.'
+          : phase === 'revealmiss'
+            ? 'Out of lives.'
+            : '';
   return (
-    <div className="flex h-12 w-full flex-col items-center justify-center sm:h-14">
+    <div
+      className="flex h-12 w-full flex-col items-center justify-center sm:h-14"
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
+    >
+      <span className="sr-only">{spoken}</span>
       <div key={key} className="banner-in flex flex-col items-center">
         {phase === 'memorize' && (
           <div className="font-display text-xl font-bold tracking-[0.3em] text-vio drop-shadow-[0_0_14px_rgba(167,139,250,0.65)] sm:text-2xl">

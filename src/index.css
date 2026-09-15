@@ -542,6 +542,81 @@ body {
   transition: width 0.9s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+/* ---------- CALM MODE -----------------------------------------------------
+   Photosensitive-safe + low-end-device path. No strobing luminance, no
+   scale pops, no shake, no blurred compositing layers. Honours the same
+   visual intent (lit vs unlit) using colour and opacity only. */
+.calm .aurora,
+.calm .title-shimmer {
+  animation: none !important;
+}
+.calm .aurora {
+  opacity: 0.1;
+}
+.calm .glass {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  background: rgba(11, 14, 30, 0.94);
+}
+.calm .grid-bg,
+.calm .stage-wash,
+.calm .gold-veil {
+  display: none;
+}
+.calm .tile-wrap {
+  animation: none !important;
+}
+.calm .tile {
+  transition: background-color 0.28s linear, border-color 0.28s linear, opacity 0.28s linear;
+  transform: none !important;
+}
+.calm .tile.on:hover {
+  border-color: rgba(167, 139, 250, 0.5);
+}
+.calm .tile[data-state="lit"] {
+  animation: none !important;
+  background: linear-gradient(155deg, var(--stage-a, #8b5cf6), var(--stage-b, #22d3ee));
+  border-color: rgba(255, 255, 255, 0.5);
+}
+.calm .tile[data-state="found"] {
+  background: linear-gradient(155deg, #0e9f7e, #36f5c5);
+  border-color: rgba(110, 255, 215, 0.6);
+  animation: none !important;
+}
+.calm .tile[data-state="missed"] {
+  background: rgba(251, 77, 109, 0.35);
+  border-color: rgba(251, 77, 109, 0.75);
+  animation: none !important;
+}
+.calm .tile[data-state="miss"] {
+  animation: none !important;
+}
+.calm .shake-sm,
+.calm .shake-lg {
+  animation: none !important;
+}
+.calm .fever-bar {
+  animation: none;
+  background: linear-gradient(90deg, #fbbf24, #f472b6);
+}
+.calm .fever-chip {
+  animation: none;
+}
+.calm .score-pop,
+.calm .pop-in,
+.calm .banner-in,
+.calm .float-pop {
+  animation-duration: 0.28s;
+  animation-timing-function: ease-out;
+}
+.calm .demo-cell {
+  animation: none;
+  opacity: 0.4;
+}
+.calm .demo-cell.hot {
+  background: linear-gradient(155deg, rgba(139, 92, 246, 0.7), rgba(34, 211, 238, 0.65));
+}
+
 @media (prefers-reduced-motion: reduce) {
   .shake-sm,
   .shake-lg,
@@ -549,4 +624,16 @@ body {
   .title-shimmer {
     animation: none;
   }
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
 }

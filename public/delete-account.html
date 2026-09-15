@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#05060f" />
+    <title>Delete ENGRAM Cloud Account</title>
+    <style>
+      :root { color-scheme: dark; font-family: system-ui, sans-serif; background: #05060f; color: #e8ecff; }
+      body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 20px; background: radial-gradient(circle at 50% 0, #28112e, #05060f 48%); box-sizing: border-box; }
+      main { width: min(100%, 520px); border: 1px solid #ffffff18; border-radius: 24px; background: #0d1022dd; padding: 26px; box-sizing: border-box; }
+      h1 { margin: 0; font-size: 25px; letter-spacing: .08em; }
+      p, li { color: #aeb5d1; font-size: 14px; line-height: 1.7; }
+      ol { padding-left: 20px; }
+      a { color: #36f5c5; }
+      .button { display: block; text-align: center; margin-top: 20px; padding: 14px 18px; border-radius: 12px; background: linear-gradient(90deg,#fb4d6d,#f472b6); color: #05060f; font-weight: 800; text-decoration: none; letter-spacing: .08em; }
+      .small { font-size: 12px; color: #8b93b8; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Delete your ENGRAM cloud account</h1>
+      <p>This deletes the private Firestore save and Firebase Authentication account associated with ENGRAM.</p>
+      <ol>
+        <li>Open the account manager below.</li>
+        <li>Sign in with the Google account you used for Cloud Sync.</li>
+        <li>Select <strong>Delete Cloud Account</strong> and confirm.</li>
+        <li>Verify your Google identity when prompted.</li>
+      </ol>
+      <a class="button" href="./?manage=account">OPEN ACCOUNT MANAGER</a>
+      <p class="small">Deletion does not erase progress stored only on your current device. To remove that too, open Settings, Privacy, then Reset All Local Data.</p>
+      <p class="small"><a href="./privacy.html">Read the privacy policy</a></p>
+    </main>
+  </body>
+</html>

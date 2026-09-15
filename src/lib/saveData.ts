@@ -13,6 +13,49 @@ export interface SaveBundle {
   scores: ScoreEntry[];
 }
 
+const cleanNumber = (value: unknown) =>
+  typeof value === 'number' && Number.isFinite(value) && value >= 0 ? Math.floor(value) : 0;
+
+/** Treat imported and cloud data as untrusted before it reaches the game state. */
+export function parseSaveBundle(value: unknown): SaveBundle | null {
+  if (!value || typeof value !== 'object') return null;
+  const raw = value as Partial<SaveBundle>;
+  if (raw.v !== 1 || !raw.meta || typeof raw.meta !== 'object' || !Array.isArray(raw.scores)) return null;
+
+  const metaRaw = raw.meta as Partial<MetaStore>;
+  const scores = raw.scores
+    .filter((score): score is ScoreEntry => {
+      if (!score || typeof score !== 'object') return false;
+      const s = score as Partial<ScoreEntry>;
+      return typeof s.id === 'string' && typeof s.name === 'string' && typeof s.score === 'number';
+    })
+    .map((score) => ({
+      id: score.id.slice(0, 40),
+      name: score.name.slice(0, 16),
+      score: cleanNumber(score.score),
+      level: Math.max(1, cleanNumber(score.level)),
+      date: cleanNumber(score.date),
+      mode: score.mode === 'calm' || score.mode === 'surge' ? score.mode : ('focus' as const),
+    }))
+    .slice(0, 30);
+
+  return {
+    v: 1,
+    ts: cleanNumber(raw.ts) || Date.now(),
+    name: typeof raw.name === 'string' ? raw.name.slice(0, 16) : 'PLAYER',
+    meta: {
+      xp: cleanNumber(metaRaw.xp),
+      runs: cleanNumber(metaRaw.runs),
+      tiles: cleanNumber(metaRaw.tiles),
+      perfects: cleanNumber(metaRaw.perfects),
+      bestLevel: cleanNumber(metaRaw.bestLevel),
+      streak: cleanNumber(metaRaw.streak),
+      lastDay: typeof metaRaw.lastDay === 'string' ? metaRaw.lastDay.slice(0, 10) : '',
+    },
+    scores,
+  };
+}
+
 function toB64(s: string): string {
   const bytes = new TextEncoder().encode(s);
   let bin = '';
@@ -36,11 +79,11 @@ export function encodeSave(bundle: SaveBundle): string {
 
 export function decodeSave(raw: string): SaveBundle | null {
   try {
-    const trimmed = raw.trim().replace(/\s+/g, '');
+    const original = raw.trim();
+    if (original.startsWith('{')) return parseSaveBundle(JSON.parse(original));
+    const trimmed = original.replace(/\s+/g, '');
     const body = trimmed.startsWith(SAVE_PREFIX) ? trimmed.slice(SAVE_PREFIX.length) : trimmed;
-    const parsed = JSON.parse(fromB64(body)) as SaveBundle;
-    if (!parsed || typeof parsed !== 'object' || !parsed.meta || !Array.isArray(parsed.scores)) return null;
-    return parsed;
+    return parseSaveBundle(JSON.parse(fromB64(body)));
   } catch {
     return null;
   }

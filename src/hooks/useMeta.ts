@@ -29,7 +29,8 @@ export interface RunSummary {
   streakExtended: boolean;
 }
 
-const KEY = 'synapse-meta-v1';
+const KEY = 'engram-meta-v1';
+const LEGACY_KEY = 'synapse-meta-v1';
 const EMPTY: MetaStore = { xp: 0, runs: 0, tiles: 0, perfects: 0, bestLevel: 0, streak: 0, lastDay: '' };
 const TITLES = ['NOVICE', 'SYNC', 'PULSE', 'FLOW', 'LUCID', 'MNEMON', 'ORACLE', 'APEX'];
 
@@ -52,7 +53,7 @@ const dayKey = (d = new Date()) =>
 
 function load(): MetaStore {
   try {
-    const raw = localStorage.getItem(KEY);
+    const raw = localStorage.getItem(KEY) ?? localStorage.getItem(LEGACY_KEY);
     if (!raw) return EMPTY;
     return { ...EMPTY, ...(JSON.parse(raw) as Partial<MetaStore>) };
   } catch {
